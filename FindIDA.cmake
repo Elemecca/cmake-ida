@@ -117,7 +117,7 @@ function(add_ida_module module_name)
     set(options PLUGIN LOADER PROCESSOR)
     set(oneValue)
     set(multiValue SOURCES)
-    cmake_parse_arguments(PARSE_ARGV 2 module
+    cmake_parse_arguments(PARSE_ARGV 1 module
         "${options}" "${oneValue}" "${multiValue}"
     )
 
@@ -129,7 +129,58 @@ function(add_ida_module module_name)
         OUTPUT_NAME "${module_name}${_ida_module_suffix}"
     )
 
-    if(module_PROCESSOR)
+
+    if((module_PLUGIN AND (module_LOADER OR module_PROCESSOR))
+            OR (module_LOADER AND module_PROCESSOR))
+        message(FATAL_ERROR
+            "Only one module type (PLUGIN, LOADER, or PROCESSOR)"
+            " is permitted."
+        )
+    endif()
+
+    if(module_PLUGIN)
+        set(_ida_export  "PLUGIN")
+        set(_ida_dll_def "${IDA_ROOT_DIR}/plugins/plugin.def")
+        set(_ida_vscript "${IDA_ROOT_DIR}/plugins/plugin.script")
+    elseif(module_LOADER)
+        set(_ida_export  "LDSC")
+        set(_ida_dll_def "${IDA_ROOT_DIR}/ldr/ldr.def")
+        set(_ida_vscript "${IDA_ROOT_DIR}/ldr/ldr.script")
+    elseif(module_PROCESSOR)
         target_compile_definitions(${module_name} PUBLIC __IDP__)
+        set(_ida_export  "LPH")
+        set(_ida_dll_def "${IDA_ROOT_DIR}/module/idp.def")
+        set(_ida_vscript "${IDA_ROOT_DIR}/module/idp.script")
+    else()
+        message(FATAL_ERROR
+            "The module type (PLUGIN, LOADER, or PROCESSOR)"
+            " is required."
+        )
+    endif()
+
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # when building Windows DLLs with mingw-w64, statically link
+        # the GCC runtime libraries so only the output DLL is needed
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            string(APPEND _ida_link_flags
+                " -static-libgcc"
+                " -static-libstdc++"
+            )
+        endif()
+
+        string(APPEND _ida_link_flags
+            " -Wl,--version-script=${_ida_vscript}"
+        )
+    else()
+        message(FATAL_ERROR
+            "Unsupported compiler ${CMAKE_CXX_COMPILER_ID}"
+        )
+    endif()
+
+    if(_ida_link_flags)
+        set_target_properties(${module_name} PROPERTIES
+            LINK_FLAGS "${_ida_link_flags}"
+        )
     endif()
 endfunction()
