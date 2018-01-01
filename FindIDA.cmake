@@ -140,16 +140,13 @@ function(add_ida_module module_name)
 
     if(module_PLUGIN)
         set(_ida_export  "PLUGIN")
-        set(_ida_dll_def "${IDA_ROOT_DIR}/plugins/plugin.def")
         set(_ida_vscript "${IDA_ROOT_DIR}/plugins/plugin.script")
     elseif(module_LOADER)
         set(_ida_export  "LDSC")
-        set(_ida_dll_def "${IDA_ROOT_DIR}/ldr/ldr.def")
         set(_ida_vscript "${IDA_ROOT_DIR}/ldr/ldr.script")
     elseif(module_PROCESSOR)
         target_compile_definitions(${module_name} PUBLIC __IDP__)
         set(_ida_export  "LPH")
-        set(_ida_dll_def "${IDA_ROOT_DIR}/module/idp.def")
         set(_ida_vscript "${IDA_ROOT_DIR}/module/idp.script")
     else()
         message(FATAL_ERROR
@@ -159,7 +156,23 @@ function(add_ida_module module_name)
     endif()
 
 
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_definitions(${module_name} PUBLIC __VC__)
+
+        string(APPEND _ida_compile_flags
+            # flags taken from makeenv_vc.mak in the SDK
+            " /GF"   # merge duplicate strings
+            " /EHs"  # exception handling
+            " /Gy"   # separate functions for linker
+            " /Gw"   # separate data for linker
+            #" /FC" # show full paths
+            #" /Wall" # all warnings on
+        )
+
+        string(APPEND _ida_link_flags
+            " /EXPORT:${_ida_export},@1,,DATA"
+        )
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         # when building Windows DLLs with mingw-w64, statically link
         # the GCC runtime libraries so only the output DLL is needed
         if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -178,9 +191,8 @@ function(add_ida_module module_name)
         )
     endif()
 
-    if(_ida_link_flags)
-        set_target_properties(${module_name} PROPERTIES
-            LINK_FLAGS "${_ida_link_flags}"
-        )
-    endif()
+    set_target_properties(${module_name} PROPERTIES
+        COMPILE_FLAGS "${_ida_compile_flags}"
+        LINK_FLAGS "${_ida_link_flags}"
+    )
 endfunction()
