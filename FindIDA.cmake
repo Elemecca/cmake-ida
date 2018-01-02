@@ -93,6 +93,16 @@ if(IDA_FOUND)
         )
     endif()
 
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        # remove /EHsc from default CXX flags
+        string(REGEX REPLACE
+            " */EH[a-z]+ *" " "
+            CMAKE_CXX_FLAGS
+            ${CMAKE_CXX_FLAGS}
+        )
+    endif()
+
     set(IDA_LIBRARY_DIR
         ${IDA_ROOT_DIR}/lib/${_ida_arch}_${_ida_target}_${_ida_ea}
     )
@@ -159,31 +169,38 @@ function(add_ida_module module_name)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         target_compile_definitions(${module_name} PUBLIC __VC__)
 
-        string(APPEND _ida_compile_flags
-            # flags taken from makeenv_vc.mak in the SDK
-            " /GF"   # merge duplicate strings
-            " /EHs"  # exception handling
-            " /Gy"   # separate functions for linker
-            " /Gw"   # separate data for linker
-            #" /FC" # show full paths
-            #" /Wall" # all warnings on
+        # extract warnings flags from SDK makefile
+        file(STRINGS
+            "${IDA_ROOT_DIR}/makeenv_vc.mak"
+            _ida_compile_warnings
+            REGEX "^/w[de][0-9]+"
         )
 
-        string(APPEND _ida_link_flags
-            " /EXPORT:${_ida_export},@1,,DATA"
+        list(APPEND _ida_compile_flags
+            # flags taken from makeenv_vc.mak in the SDK
+            "/GF"   # merge duplicate strings
+            "/EHs"  # no SEH; "extern C" may throw
+            "/Gy"   # separate functions for linker
+            "/Gw"   # separate data for linker
+            "/Wall" # all warnings on
+            ${_ida_compile_warnings}
+        )
+
+        list(APPEND _ida_link_flags
+            "/EXPORT:${_ida_export},@1,,DATA"
         )
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         # when building Windows DLLs with mingw-w64, statically link
         # the GCC runtime libraries so only the output DLL is needed
         if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-            string(APPEND _ida_link_flags
-                " -static-libgcc"
-                " -static-libstdc++"
+            list(APPEND _ida_link_flags
+                "-static-libgcc"
+                "-static-libstdc++"
             )
         endif()
 
-        string(APPEND _ida_link_flags
-            " -Wl,--version-script=${_ida_vscript}"
+        list(APPEND _ida_link_flags
+            "-Wl,--version-script=${_ida_vscript}"
         )
     else()
         message(FATAL_ERROR
@@ -191,6 +208,9 @@ function(add_ida_module module_name)
         )
     endif()
 
+    # convert flag lists to space-delimited strings and set on target
+    string(REPLACE ";" " " _ida_compile_flags "${_ida_compile_flags}")
+    string(REPLACE ";" " " _ida_link_flags "${_ida_link_flags}")
     set_target_properties(${module_name} PROPERTIES
         COMPILE_FLAGS "${_ida_compile_flags}"
         LINK_FLAGS "${_ida_link_flags}"
